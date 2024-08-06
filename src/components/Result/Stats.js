@@ -2,7 +2,6 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { Segment, Header, Button } from 'semantic-ui-react';
 
-import ShareButton from '../ShareButton';
 import { calculateScore, calculateGrade, timeConverter } from '../../utils';
 
 const Stats = ({
@@ -59,7 +58,6 @@ const Stats = ({
           labelPosition="left"
           style={{ marginBottom: 8 }}
         />
-        <ShareButton />
       </div>
     </Segment>
   );

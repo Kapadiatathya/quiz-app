@@ -1,0 +1,296 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'HTTP API Gateway with CORS, Lambda functions, and DynamoDB tables'
+
+Resources:
+  HttpApi:
+    Type: 'AWS::ApiGatewayV2::Api'
+    Properties:
+      Name: 'MyHTTPAPI'
+      ProtocolType: 'HTTP'
+      CorsConfiguration:
+        AllowHeaders:
+          - 'content-type'
+          - 'x-amz-date'
+          - 'authorization'
+          - 'x-api-key'
+          - 'x-amz-security-token'
+        AllowMethods:
+          - 'GET'
+          - 'OPTIONS'
+          - 'POST'
+        AllowOrigins:
+          - '*'
+        MaxAge: 3600
+
+  GetUserDataStatsRoute:
+    Type: 'AWS::ApiGatewayV2::Route'
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /getuserdata/stats'
+      Target: !Join 
+        - '/'
+        - - 'integrations'
+          - !Ref GetUserDataStatsIntegration
+
+  StoreDataRoute:
+    Type: 'AWS::ApiGatewayV2::Route'
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /storeData'
+      Target: !Join 
+        - '/'
+        - - 'integrations'
+          - !Ref StoreDataIntegration
+
+  GetUserDataStatsIntegration:
+    Type: 'AWS::ApiGatewayV2::Integration'
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: 'AWS_PROXY'
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction1.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+      IntegrationMethod: 'POST'
+
+  StoreDataIntegration:
+    Type: 'AWS::ApiGatewayV2::Integration'
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: 'AWS_PROXY'
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction2.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+      IntegrationMethod: 'POST'
+
+  ApiStage:
+    Type: 'AWS::ApiGatewayV2::Stage'
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: '$default'
+      AutoDeploy: true
+
+  LambdaFunction1:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'LambdaFunction1'
+      Handler: 'lambda_function.lambda_handler'
+      Role: 'arn:aws:iam::296735210236:role/LabRole'
+      Code:
+        S3Bucket: 'tathyalambdafunctions'
+        S3Key: 'lambda-function-1.zip'
+      Runtime: 'python3.10'
+
+  LambdaFunction2:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: 'LambdaFunction2'
+      Handler: 'lambda_function.lambda_handler'
+      Role: 'arn:aws:iam::296735210236:role/LabRole'
+      Code:
+        S3Bucket: 'tathyalambdafunctions'
+        S3Key: 'lambda-function-2.zip'
+      Runtime: 'python3.10'
+
+  ApiGatewayPermission1:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt LambdaFunction1.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/getuserdata/stats'
+
+  ApiGatewayPermission2:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt LambdaFunction2.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/storeData'
+
+  # Application Load Balancer Security Group
+  ALBSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Security group for Application Load Balancer'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: 'Allow inbound HTTP traffic'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: 'Allow all outbound traffic'
+
+  # Container Security Group
+  ToContainerSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Security group for containers'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          SourceSecurityGroupId: !Ref ALBSG
+          Description: 'Allow all TCP traffic from ALB'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: 'Allow all outbound traffic'
+
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: quitest
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  # ECS Task Definition
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: quizappdeploydefinition-new
+      Cpu: '1024'
+      Memory: '3072'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: arn:aws:iam::296735210236:role/LabRole
+      TaskRoleArn: arn:aws:iam::296735210236:role/LabRole
+      ContainerDefinitions:
+        - Name: quizappcontainer
+          Image: 296735210236.dkr.ecr.us-east-1.amazonaws.com/tathyaquizapp:latest
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+            - ContainerPort: 3000
+              HostPort: 3000
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  # CloudWatch Logs Group
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/quizappdeploydefinition-new
+      RetentionInDays: 14
+
+  # ECS Service
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ALBListener
+    Properties:
+      ServiceName: quizapp-service
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DesiredCount: 3
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref ToContainerSG
+      LoadBalancers:
+        - ContainerName: quizappcontainer
+          ContainerPort: 3000
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # Application Load Balancer
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: load-balancer-quizapp
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      Subnets: !Ref SubnetIds
+      SecurityGroups:
+        - !Ref ALBSG
+
+  # ALB Listener
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+
+  # ALB Target Group
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckPath: /
+      Name: ecs-quizap
+      Port: 3000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VpcId
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-00a79bdbf7f74e8f5
+    Description: The ID of the existing VPC
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Select at least two public subnets in your selected VPC
+
+  # QuizQNATable:
+  #   Type: 'AWS::DynamoDB::Table'
+  #   Properties:
+  #     TableName: 'QuizQNA'
+  #     AttributeDefinitions:
+  #       - AttributeName: 'email'
+  #         AttributeType: 'S'
+  #       - AttributeName: 'timestamp'
+  #         AttributeType: 'S'
+  #     KeySchema:
+  #       - AttributeName: 'email'
+  #         KeyType: 'HASH'
+  #       - AttributeName: 'timestamp'
+  #         KeyType: 'RANGE'
+  #     BillingMode: 'PAY_PER_REQUEST'
+
+  # QuizStatsTable:
+  #   Type: 'AWS::DynamoDB::Table'
+  #   Properties:
+  #     TableName: 'QuizStats'
+  #     AttributeDefinitions:
+  #       - AttributeName: 'email'
+  #         AttributeType: 'S'
+  #       - AttributeName: 'timestamp'
+  #         AttributeType: 'S'
+  #     KeySchema:
+  #       - AttributeName: 'email'
+  #         KeyType: 'HASH'
+  #       - AttributeName: 'timestamp'
+  #         KeyType: 'RANGE'
+  #     BillingMode: 'PAY_PER_REQUEST'
+
+Outputs:
+  HttpApiUrl:
+    Description: 'HTTP API Gateway URL'
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+
+  LoadBalancerDNS:
+    Description: 'DNS Name of the Application Load Balancer'
+    Value: !GetAtt ALB.DNSName

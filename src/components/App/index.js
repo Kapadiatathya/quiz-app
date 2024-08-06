@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 
 import Layout from '../Layout';
 import Loader from '../Loader';
 import Main from '../Main';
 import Quiz from '../Quiz';
 import Result from '../Result';
+import Login from '../Login';
+import Dashboard from '../Dashboard';
 
 import { shuffle } from '../../utils';
 
@@ -86,19 +89,44 @@ const App = () => {
     }, 1000);
   };
 
+  const PrivateRoute = ({ children }) => {
+    const isLoggedIn = localStorage.getItem('userEmail');
+    return isLoggedIn ? children : <Navigate to="/login" />;
+  };
+
   return (
-    <Layout>
-      {loading && <Loader {...loadingMessage} />}
-      {!loading && !isQuizStarted && !isQuizCompleted && (
-        <Main startQuiz={startQuiz} />
-      )}
-      {!loading && isQuizStarted && (
-        <Quiz data={data} countdownTime={countdownTime} endQuiz={endQuiz} />
-      )}
-      {!loading && isQuizCompleted && (
-        <Result {...resultData} replayQuiz={replayQuiz} resetQuiz={resetQuiz} />
-      )}
-    </Layout>
+    <Router>
+      <Layout>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/dashboard"
+            element={
+              <PrivateRoute>
+                <Dashboard />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/"
+            element={
+              <>
+                {loading && <Loader {...loadingMessage} />}
+                {!loading && !isQuizStarted && !isQuizCompleted && (
+                  <Main startQuiz={startQuiz} />
+                )}
+                {!loading && isQuizStarted && (
+                  <Quiz data={data} countdownTime={countdownTime} endQuiz={endQuiz} />
+                )}
+                {!loading && isQuizCompleted && (
+                  <Result {...resultData} replayQuiz={replayQuiz} resetQuiz={resetQuiz} />
+                )}
+              </>
+            }
+          />
+        </Routes>
+      </Layout>
+    </Router>
   );
 };
 

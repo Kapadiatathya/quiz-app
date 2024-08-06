@@ -1,9 +1,19 @@
-import React, { useState } from 'react';
-import { Menu, Button } from 'semantic-ui-react';
+import React, { useState, useEffect } from 'react';
+import { Menu, Button, Dropdown } from 'semantic-ui-react';
+import { Link, useNavigate } from 'react-router-dom';
 
 const Header = () => {
   const [promptEvent, setPromptEvent] = useState(null);
   const [appAccepted, setAppAccepted] = useState(false);
+  const [userEmail, setUserEmail] = useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const email = localStorage.getItem('userEmail');
+    if (email) {
+      setUserEmail(email);
+    }
+  }, []);
 
   let isAppInstalled = false;
 
@@ -28,13 +38,19 @@ const Header = () => {
     });
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('userEmail');
+    setUserEmail(null);
+    navigate('/');
+  };
+
   return (
     <Menu stackable inverted>
       <Menu.Item header>
         <h1>QuizApp</h1>
       </Menu.Item>
       {promptEvent && !isAppInstalled && (
-        <Menu.Item position="right">
+        <Menu.Item>
           <Button
             color="teal"
             icon="download"
@@ -44,6 +60,20 @@ const Header = () => {
           />
         </Menu.Item>
       )}
+      <Menu.Menu position="right">
+        {userEmail ? (
+          <Dropdown item text={userEmail}>
+            <Dropdown.Menu>
+              <Dropdown.Item as={Link} to="/dashboard">Dashboard</Dropdown.Item>
+              <Dropdown.Item onClick={handleLogout}>Logout</Dropdown.Item>
+            </Dropdown.Menu>
+          </Dropdown>
+        ) : (
+          <Menu.Item>
+            <Button as={Link} to="/login" primary>Login</Button>
+          </Menu.Item>
+        )}
+      </Menu.Menu>
     </Menu>
   );
 };
